@@ -136,30 +136,123 @@ async function getPredictionsForTopNStops(coords, n) {
 }
 
 /*
-
+[
+    {
+        directionName: "Northbound",
+        stops: [
+            {
+                stopName: "Eglinton & Dunfield",
+                routes: [
+                    {
+                        directionName: "North",
+                        globalName: "56A Leaside",
+                        name: "North - 56A Leaside",
+                        predictionMinutes: [5, 10, 15]
+                    },
+                    {
+                        route: "
 */
-async function consolidateData() {
-    let predictionsData = await getPredictionsForTopNStops({lat: 43.651838, lon: -79.381618}, 6);
+async function consolidateData(coords) {
+    let stops = await getPredictionsForTopNStops(coords, 6);
+    console.log(stops);
 
     let output = [];
 
-    for (let dataIdx in predictionsData) {
-        let thisPredictionsData = predictionsData[dataIdx];
-        let stopName = predictionsData.stop.stopName;
-        for (let predictionIdx in thisPredictionsData.predictions) {
-            let prediction = thisPredictionsData.predictions[predictionIdx];
-            let thisPredictionOutput = {
+    for (let stopIdx in stops) {
+        let thisStop = stops[stopIdx];
 
-            };
+        let stopName = thisStop.stop.stopName;
+
+        let thisStopOutput = {
+            stopName,
+            routes: []
+        };
+
+        let routes = Array.isArray(thisStop.predictions) ? thisStop.predictions : [thisStop.predictions];
+        for (let routeIdx in routes) {
+            let route = routes[routeIdx];
+
+            if (!route || !route.hasOwnProperty('direction') || !route.hasOwnProperty('routeTitle')) {
+                continue;
+            }
+
+            let globalName = route.routeTitle;
+
+            let directions = Array.isArray(route.direction) ? route.direction : [route.direction];
+
+
+            for (let directionIdx in directions) {
+                let direction = directions[directionIdx];
+                let name = direction['title'];
+                let predictions = direction['prediction'];
+
+                let predictionMinutes = [];
+
+                for (let predictionIdx in predictions) {
+                    predictionMinutes.push(predictions[predictionIdx]['minutes']);
+                }
+
+                predictionMinutes = predictionMinutes.map(val => parseInt(val));
+
+                let directionName = 'Unknown';
+                if (name.startsWith('East')) {
+                    directionName = 'Eastbound';
+                } else if (name.startsWith('West')) {
+                    directionName = 'Westbound';
+                } else if (name.startsWith('North')) {
+                    directionName = 'Northbound';
+                } else if (name.startsWith('South')) {
+                    directionName = 'Southbound';
+                }
+
+                let thisRouteOutput = {
+                    directionName,
+                    globalName,
+                    name,
+                    predictionMinutes
+                };
+
+                thisStopOutput.routes.push(thisRouteOutput);
+            }
+        }
+
+        output.push(thisStopOutput);
+    }
+
+    let consolidatedOutput = {"Eastbound": [], "Westbound": [], "Northbound": [], "Southbound": [], "Unknown": []};
+    for (let stopIdx in output) {
+        let stop = output[stopIdx];
+
+        let stopName = stop.stopName;
+        for (let routeIdx in stop.routes) {
+            let route = stop.routes[routeIdx];
+            let directionOutput = consolidatedOutput[route.directionName];
+            let existingIndex = directionOutput.findIndex(stop => stop.stopName === stopName);
+            if (existingIndex === -1) {
+                consolidatedOutput[route.directionName].push({
+                    stopName,
+                    routes: [route]
+                })
+            } else {
+                consolidatedOutput[route.directionName][existingIndex].routes.push(route);
+            }
         }
     }
+    return consolidatedOutput;
 }
 
 // Eglinton and Dunfield: {lat: 43.707321, lon: -79.395445}
 // Queen and Bay: {lat: 43.651838, lon: -79.381618}
-getPredictionsForTopNStops({lat: 43.707321, lon: -79.395445}, 6).then(str => console.log(str));
+//getPredictionsForTopNStops({lat: 43.707321, lon: -79.395445}, 6).then(str => console.log(str));
 
-//consolidateData().then(data => console.log(data));
+navigator.geolocation.getCurrentPosition((pos, err) => {
+    if (err) {
+        alert('Error!' + err);
+    } else {
+        consolidateData({lat: pos.coords.latitude, lon: pos.coords.longitude}).then(data => document.write('<pre>' + JSON.stringify(data, null, 4)));
+    }
+})
+
 
 //(function(dataset) {
 //    // dataset object doc'd below
