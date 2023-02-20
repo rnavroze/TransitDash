@@ -1,6 +1,6 @@
 // https://github.com/okfn/csv.js/blob/master/csv.js
 /* global jQuery, _ */
-var CSV = {};
+var CsvHelper = {};
 
 // Note that provision of jQuery is optional (it is **only** needed if you use fetch on a remote file)
 (function(my) {
@@ -356,13 +356,7 @@ var CSV = {};
             return s.substring(0, s.length - lineterminator.length);
         }
     }
-})(CSV);
+})(CsvHelper);
 
 // backwards compatability for use in Recline
-var recline = recline || {};
-recline.Backend = recline.Backend || {};
-recline.Backend.CsvHelper = CSV;
-
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = CSV;
-}
+export default CsvHelper;
