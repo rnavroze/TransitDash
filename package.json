@@ -10,6 +10,8 @@
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix --ignore-path .gitignore"
   },
   "dependencies": {
+    "@element-plus/icons-vue": "^2.0.10",
+    "element-plus": "^2.2.32",
     "pinia": "^2.0.28",
     "vue": "^3.2.45",
     "vue-router": "^4.1.6"
@@ -21,6 +23,7 @@
     "@vue/test-utils": "^2.2.6",
     "jsdom": "^20.0.3",
     "prettier": "^2.7.1",
+    "sass": "^1.58.3",
     "vite": "^4.0.0",
     "vitest": "^0.25.6"
   }
