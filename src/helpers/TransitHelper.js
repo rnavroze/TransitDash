@@ -234,15 +234,17 @@ const TransitHelper = {
 
     // Eglinton and Dunfield: {lat: 43.707321, lon: -79.395445}
     // Queen and Bay: {lat: 43.651838, lon: -79.381618}
+    // (function c2a(lat, lon) { return {lat, lon} })(43.638015, -79.537103)
     //getPredictionsForTopNStops({lat: 43.707321, lon: -79.395445}, 6).then(str => console.log(str));
     async getData() {
         try {
             let pos = await GeolocationHelper.getCurrentPosition();
-            let data = await this.consolidateData((function c2a(lat, lon) { return {lat, lon} })(43.638015, -79.537103));//);{lat: pos.coords.latitude, lon: pos.coords.longitude});
+            let data = await this.consolidateData({lat: pos.coords.latitude, lon: pos.coords.longitude});
 
             console.log('data', data);
             return ['success', data];
         } catch (err) {
+            console.error('error', err);
             return ['error', err];
         }
     }

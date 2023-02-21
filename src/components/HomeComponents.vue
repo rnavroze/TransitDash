@@ -9,6 +9,7 @@ import {ElMessage} from 'element-plus';
 const state = reactive({
     isLoading: true,
     isRefreshing: false,
+    geolocationDenied: false,
     nextUpdate: 30,
     netrains: [],
     swtrains: []
@@ -22,14 +23,22 @@ let getData = async () => {
         state.netrains = data[1]['NorthboundEastbound'];
         state.swtrains = data[1]['SouthboundWestbound'];
     } else {
-        ElMessage({
-            showClose: true,
-            message: data[1],
-            duration: 0,
-            type: 'error',
-        })
+        if (data[1].code === 1) {
+            state.geolocationDenied = true;
+        } else {
+            ElMessage({
+                showClose: true,
+                message: data[1],
+                duration: 0,
+                type: 'error',
+            })
+        }
     }
 };
+
+let reload = () => {
+    window.location.reload();
+}
 
 onMounted(async () => {
     await getData();
@@ -151,10 +160,21 @@ let updateTick = async () => {
                 </el-col>
             </el-row>
             <el-row v-if="state.isLoading">
-                <el-col :span="24" style="text-align: center">
+                <el-col :span="24" style="text-align: center" v-if="!state.geolocationDenied">
                     <el-icon class="is-loading">
                         <Loading/>
                     </el-icon>
+                </el-col>
+                <el-col :span="24" v-else>
+                    <el-result
+                            icon="error"
+                            title="Location Denied"
+                            sub-title="Please allow this app to access your location"
+                    >
+                        <template #extra>
+                            <el-button type="primary" @click="reload">Reload</el-button>
+                        </template>
+                    </el-result>
                 </el-col>
             </el-row>
             <el-row class="trains" v-else>
