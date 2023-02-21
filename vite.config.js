@@ -28,6 +28,7 @@ export default defineConfig({
             ]
         }
     })],
+    base: '/transitdash',
     resolve: {
         alias: {
             "@": fileURLToPath(new URL("./src", import.meta.url)),
