@@ -6,6 +6,13 @@ import GeolocationHelper from "@/helpers/GeolocationHelper";
 const TRANSIT_AGENCY_TAG = 'ttc';
 const FETCH_N_STOPS = 20;
 
+const SUBWAY_LINES = [
+    {lineNo: 1, lineName: 'Yonge-University', branchNE: 1, branchSW: 0},
+    {lineNo: 2, lineName: 'Bloor-Danforth', branchNE: 1, branchSW: 0},
+    {lineNo: 3, lineName: 'Scarborough', branchNE: 1, branchSW: 0},
+    {lineNo: 4, lineName: 'Sheppard', branchNE: 1, branchSW: 0},
+]
+
 const TransitHelper = {
     async getStopData() {
         // TODO: Error handling
@@ -46,17 +53,62 @@ const TransitHelper = {
         return stopsByDistance;
     },
 
-    async getPredictionsForStopByStopId(stopId) {
+    async getPredictionsForStopByStopId(stopId, isStation) {
         // https://retro.umoiq.com/service/publicXMLFeed?command=predictions&a=<agency_tag>&stopId=<stop_id>
-        let resp = await fetch(`https://retro.umoiq.com/service/publicXMLFeed?command=predictions&a=${TRANSIT_AGENCY_TAG}&stopId=${stopId}`);
+        // https://ntas.ttc.ca/api/ntas/get-next-train-time/
+        if (!isStation) {
+            let resp = await fetch(`https://retro.umoiq.com/service/publicXMLFeed?command=predictions&a=${TRANSIT_AGENCY_TAG}&stopId=${stopId}`);
 
-        if (!resp.ok) {
-            console.error('error', resp.status, resp.statusText);
-            return null;
+            if (!resp.ok) {
+                console.error('error', resp.status, resp.statusText);
+                return null;
+            }
+
+            let respXMLStr = await resp.text();
+            return XmlHelper.parseXml(respXMLStr);
+        } else {
+            return {
+                body: {
+                    predictions:
+                        [
+                            {
+                                agencyTitle: "Toronto Transit Commission",
+                                routeTitle: "1-Yonge-University",
+                                routeTag: "1",
+                                stopTitle: "Eglinton Station",
+                                stopTag: "3908",
+                                direction: {
+                                    title: "North - 1 Yonge-University towards Finch",
+                                    prediction: {
+                                        epochTime: "1677008150236",
+                                        seconds: "1037",
+                                        minutes: "17",
+                                        isDeparture: "false",
+                                        affectedByLayover: "true",
+                                        branch: "97F",
+                                        dirTag: "97_1_97F",
+                                        vehicle: "3560",
+                                        block: "97_5_52",
+                                        tripTag: "45452945"
+                                    }
+                                }
+                            },
+                            {
+                                agencyTitle: "Toronto Transit Commission",
+                                routeTitle: "320-Yonge Night Bus",
+                                routeTag: "320",
+                                stopTitle: "Yonge St At Eglinton Ave East North Side - Eglinton Station",
+                                stopTag: "3908",
+                                dirTitleBecauseNoPredictions: "North - 320 Yonge towards Steeles via Finch Station"
+                            }
+                        ]
+                }
+            }
         }
+    },
 
-        let respXMLStr = await resp.text();
-        return XmlHelper.parseXml(respXMLStr);
+    isStation(stopName) {
+        return stopName.endsWith('Station') && stopName.indexOf(' at ') === -1 && stopName.indexOf(' - ') === -1;
     },
 
     async getPredictionsForTopNStops(coords, n) {
@@ -64,19 +116,37 @@ const TransitHelper = {
 
         let stops = await this.getNearestStops(coords);
 
+        let gotStation = false;
         let stopsToConsider = [];
         for (let i = 0; i < n; i++) {
             if (stops.length < i)
                 break;
 
+            if (this.isStation(stops[i].stopName)) {
+                gotStation = true;
+            }
             stopsToConsider.push(stops[i]);
         }
+
+        // We need to consider at least one station
+        if (!gotStation) {
+            for (let stopIndex in stops) {
+                if (this.isStation(stops[stopIndex].stopName)) {
+                    gotStation = true;
+                    stopsToConsider.push(stops[stopIndex]);
+                    break;
+                }
+            }
+        }
+
+        // Always put stations on top
+        stopsToConsider.sort(elem => this.isStation(elem.stopName) ? -1 : 0)
 
         let stopsToReturn = [];
         let promises = [];
         for (let idx in stopsToConsider) {
             let stopToConsider = stopsToConsider[idx];
-            promises.push(this.getPredictionsForStopByStopId(stopToConsider.stopId));
+            promises.push(this.getPredictionsForStopByStopId(stopToConsider.stopId, this.isStation(stopToConsider.stopName)));
         }
 
         let promiseResults = await Promise.all(promises);
@@ -85,8 +155,9 @@ const TransitHelper = {
             let thisStopPredictions = promiseResults[idx];
             stopsToReturn.push({
                 stop: stopToConsider,
-                predictions: thisStopPredictions.body.predictions
+                predictions: thisStopPredictions.body?.predictions
             });
+
         }
 
         return stopsToReturn;
@@ -124,6 +195,10 @@ const TransitHelper = {
                     let direction = directions[directionIdx];
                     let name = direction['title'];
                     let routeNo = "?";
+                    let isSubway = false;
+                    let subwayLine = 0;
+                    let isNight = false;
+                    let isExpress = false;
                     let towards = "Unknown";
                     let predictions = Array.isArray(direction['prediction']) ? direction['prediction'] : [direction['prediction']];
 
@@ -163,6 +238,17 @@ const TransitHelper = {
                             let routeNoIndex = name.indexOf(" ");
                             if (routeNoIndex !== -1) {
                                 routeNo = name.substring(0, routeNoIndex).toUpperCase();
+
+                                let routeNoInt = parseInt(routeNo);
+                                if (routeNoInt < 7) {
+                                    isSubway = true;
+                                    subwayLine = routeNoInt;
+                                }
+                                if (routeNoInt >= 300 && routeNoInt < 400) {
+                                    isNight = true;
+                                } else if (routeNoInt >= 900 && routeNoInt < 1000) {
+                                    isExpress = true;
+                                }
                                 name = name.substring(routeNoIndex + 1);
                             }
 
@@ -190,6 +276,10 @@ const TransitHelper = {
                         globalName,
                         name,
                         routeNo,
+                        subwayLine,
+                        isSubway,
+                        isNight,
+                        isExpress,
                         towards,
                         firstPrediction,
                         predictionMinutes
@@ -203,16 +293,27 @@ const TransitHelper = {
         }
 
         let consolidatedOutput = {"NorthboundEastbound": [], "SouthboundWestbound": [], "Unknown": []};
+
+        let repeatedStationOnBothSides = false;
+        let repeatingStationOnBothSides = false;
+        let lastStationSide = "";
+
         for (let stopIdx in output) {
             let stop = output[stopIdx];
 
             let stopName = stop.stopName;
-            for (let routeIdx in stop.routes) {
+            for (let routeIdx = 0; routeIdx < stop.routes.length; routeIdx++) {
                 let route = stop.routes[routeIdx];
                 let consolidatedDirectionName =
                     (route.directionName === "Northbound" || route.directionName === "Eastbound") ? "NorthboundEastbound"
                         : (route.directionName === "Southbound" || route.directionName === "Westbound") ? "SouthboundWestbound"
                             : "Unknown";
+
+                if (repeatingStationOnBothSides) {
+                    consolidatedDirectionName = lastStationSide === "NorthboundEastbound" ? "SouthboundWestbound" : "NorthboundEastbound";
+                    repeatedStationOnBothSides = true;
+                }
+
                 let directionOutput = consolidatedOutput[consolidatedDirectionName];
                 let existingIndex = directionOutput.findIndex(stop => stop.stopName === stopName);
 
@@ -223,7 +324,21 @@ const TransitHelper = {
                     })
                 } else {
                     consolidatedOutput[consolidatedDirectionName][existingIndex].routes.push(route);
+
+                    // First we sort by A, B, C then we sort by numbers
                     consolidatedOutput[consolidatedDirectionName][existingIndex].routes.sort((a, b) => a.routeNo.localeCompare(b.routeNo));
+                    consolidatedOutput[consolidatedDirectionName][existingIndex].routes.sort((a, b) => parseInt(a.routeNo) - parseInt(b.routeNo));
+                }
+
+                // Special case for stations
+                if (this.isStation(stopName)) {
+                    if (repeatingStationOnBothSides === false) {
+                        routeIdx--;
+                        lastStationSide = consolidatedDirectionName;
+                        repeatingStationOnBothSides = true;
+                    }
+                } else {
+                    repeatingStationOnBothSides = false;
                 }
             }
         }

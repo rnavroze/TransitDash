@@ -92,14 +92,57 @@ let updateTick = async () => {
 .header {
   .el-card {
     margin-bottom: 20px;
-    background-color: var(--el-color-danger);
-    color: var(--el-color-danger-light-9);
+    background-color: #000055;
+    color: #fff;
     font-size: var(--el-font-size-large);
     font-weight: bold !important;
   }
 }
 
 .trains {
+  --color-normal: #DA251D;
+  --color-night: #024182;
+  --color-express: #00923F;
+  --color-line1: #F8C300;
+  --color-line2: #00923F;
+  --color-line3: #0082C9;
+  --color-line4: #A21A68;
+
+  .normal {
+    background-color: var(--color-normal);
+    border-color: var(--color-normal);
+  }
+
+  .line-1 {
+    background-color: var(--color-line1);
+    border-color: var(--color-line1);
+  }
+
+  .line-2 {
+    background-color: var(--color-line2);
+    border-color: var(--color-line2);
+  }
+
+  .line-3 {
+    background-color: var(--color-line3);
+    border-color: var(--color-line3);
+  }
+
+  .line-4 {
+    background-color: var(--color-line4);
+    border-color: var(--color-line4);
+  }
+
+  .night {
+    background-color: var(--color-night);
+    border-color: var(--color-night);
+  }
+
+  .express {
+    background-color: var(--color-express);
+    border-color: var(--color-express);
+  }
+
   .el-tag {
     font-weight: bold;
 
@@ -189,7 +232,9 @@ let updateTick = async () => {
 
                                 <template #header>
                                     <div>
-                                        <el-tag type="danger" effect="dark">{{ route.routeNo }}</el-tag>
+                                        <el-tag :class="route.isSubway ? 'line-' + route.subwayLine : route.isExpress ? 'express' : route.isNight ? 'night' : 'normal'"
+                                                effect="dark">{{ route.routeNo }}
+                                        </el-tag>
                                         {{ route.name }}
                                     </div>
                                 </template>
