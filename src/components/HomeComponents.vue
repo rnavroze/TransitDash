@@ -239,7 +239,12 @@ let updateTick = async () => {
                                     </div>
                                 </template>
                                 <div class="primary_prediction">
-                                    {{ route.firstPrediction }} min
+                                    <template v-if="route.predictionMinutes.length > 0">
+                                        {{ route.firstPrediction }} min
+                                    </template>
+                                    <template v-else>
+                                        No predictions
+                                    </template>
                                 </div>
                                 <div class="towards">
                                     <el-icon style="vertical-align: middle">

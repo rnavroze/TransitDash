@@ -7,10 +7,10 @@ const TRANSIT_AGENCY_TAG = 'ttc';
 const FETCH_N_STOPS = 20;
 
 const SUBWAY_LINES = [
-    {lineNo: 1, lineName: 'Yonge-University', branchNE: 1, branchSW: 0},
-    {lineNo: 2, lineName: 'Bloor-Danforth', branchNE: 1, branchSW: 0},
-    {lineNo: 3, lineName: 'Scarborough', branchNE: 1, branchSW: 0},
-    {lineNo: 4, lineName: 'Sheppard', branchNE: 1, branchSW: 0},
+    {lineNo: 1, lineName: 'Yonge-University', directionNE: "North", directionSW: "South"},
+    {lineNo: 2, lineName: 'Bloor-Danforth', directionNE: "East", directionSW: "West"},
+    {lineNo: 3, lineName: 'Scarborough', directionNE: "East", directionSW: "West"},
+    {lineNo: 4, lineName: 'Sheppard', directionNE: "East", directionSW: "West"},
 ]
 
 const TransitHelper = {
@@ -25,7 +25,8 @@ const TransitHelper = {
     async getNearestStops(coords) {
         let stops = await this.getStopData();
 
-        let stopIdIndex = stops.fields.findIndex(field => field === "stop_code");
+        let stopIdIndex = stops.fields.findIndex(field => field === "stop_id");
+        let stopCodeIndex = stops.fields.findIndex(field => field === "stop_code");
         let stopNameIndex = stops.fields.findIndex(field => field === "stop_name");
         let stopLatIndex = stops.fields.findIndex(field => field === "stop_lat");
         let stopLonIndex = stops.fields.findIndex(field => field === "stop_lon");
@@ -36,6 +37,7 @@ const TransitHelper = {
 
             let thisStop = {
                 stopId: stop[stopIdIndex],
+                stopCode: stop[stopCodeIndex],
                 stopName: stop[stopNameIndex],
                 lat: stop[stopLatIndex],
                 lon: stop[stopLonIndex],
@@ -53,11 +55,11 @@ const TransitHelper = {
         return stopsByDistance;
     },
 
-    async getPredictionsForStopByStopId(stopId, isStation) {
+    async getPredictionsForStop(stop, isStation) {
         // https://retro.umoiq.com/service/publicXMLFeed?command=predictions&a=<agency_tag>&stopId=<stop_id>
         // https://ntas.ttc.ca/api/ntas/get-next-train-time/
         if (!isStation) {
-            let resp = await fetch(`https://retro.umoiq.com/service/publicXMLFeed?command=predictions&a=${TRANSIT_AGENCY_TAG}&stopId=${stopId}`);
+            let resp = await fetch(`https://retro.umoiq.com/service/publicXMLFeed?command=predictions&a=${TRANSIT_AGENCY_TAG}&stopId=${stop.stopCode}`);
 
             if (!resp.ok) {
                 console.error('error', resp.status, resp.statusText);
@@ -67,43 +69,45 @@ const TransitHelper = {
             let respXMLStr = await resp.text();
             return XmlHelper.parseXml(respXMLStr);
         } else {
-            return {
-                body: {
-                    predictions:
-                        [
-                            {
-                                agencyTitle: "Toronto Transit Commission",
-                                routeTitle: "1-Yonge-University",
-                                routeTag: "1",
-                                stopTitle: "Eglinton Station",
-                                stopTag: "3908",
-                                direction: {
-                                    title: "North - 1 Yonge-University towards Finch",
-                                    prediction: {
-                                        epochTime: "1677008150236",
-                                        seconds: "1037",
-                                        minutes: "17",
-                                        isDeparture: "false",
-                                        affectedByLayover: "true",
-                                        branch: "97F",
-                                        dirTag: "97_1_97F",
-                                        vehicle: "3560",
-                                        block: "97_5_52",
-                                        tripTag: "45452945"
-                                    }
-                                }
-                            },
-                            {
-                                agencyTitle: "Toronto Transit Commission",
-                                routeTitle: "320-Yonge Night Bus",
-                                routeTag: "320",
-                                stopTitle: "Yonge St At Eglinton Ave East North Side - Eglinton Station",
-                                stopTag: "3908",
-                                dirTitleBecauseNoPredictions: "North - 320 Yonge towards Steeles via Finch Station"
-                            }
-                        ]
-                }
+            let resp = await fetch(`https://ntas.ttc.ca/api/ntas/get-next-train-time/${stop.stopCode}`);
+
+            if (!resp.ok) {
+                console.error('error', resp.status, resp.statusText);
+                return null;
             }
+            let respJSON = await resp.json();
+
+            // Since I started work with the UmoIQ API first which is arguably the more convoluted API, I thought it
+            // made more sense to transform this NTAS API into the UmoIQ format
+            let returnBody = {body: {predictions: []}};
+
+            for (let lineIdx in respJSON) {
+                let lineData = respJSON[lineIdx];
+                let lineNo = parseInt(lineData.line);
+                let lineInfo = SUBWAY_LINES.find(line => line.lineNo === lineNo);
+                let directionName = lineData.direction === "1" ? 'directionNE' : 'directionSW';
+                let destination = lineData.directionText.substring(lineData.directionText.indexOf(' to ') + 4);
+
+                let predictionBody = {
+                    agencyTitle: "Toronto Transit Commission",
+                    routeTitle: `${lineNo}-${lineInfo.lineName}`,
+                    routeTag: lineNo,
+                    stopTitle: stop.stopName,
+                    stopTag: stop.stopCode,
+                    direction: {
+                        title: `${lineInfo[directionName]} - ${lineNo} ${lineInfo.lineName} towards ${destination}`,
+                        prediction: lineData.nextTrains == null || lineData.nextTrains.length === 0
+                            ? []
+                            : lineData.nextTrains.split(', ').map(minutes => {
+                                return {minutes};
+                            })
+                    }
+                };
+
+                returnBody.body.predictions.push(predictionBody);
+            }
+
+            return returnBody;
         }
     },
 
@@ -116,33 +120,34 @@ const TransitHelper = {
 
         let stops = await this.getNearestStops(coords);
 
-        // We need to get two stations - northbound and southbound / eastbound and westbound
-        // TODO: How to deal with bloor-yonge or other interchange stations?
-        let gotStations = 0;
         let stopsToConsider = [];
         for (let i = 0; i < n; i++) {
             if (stops.length < i)
                 break;
 
             if (this.isStation(stops[i].stopName)) {
-                gotStations++;
+                // We handle stations separately
+                continue;
             }
             stopsToConsider.push(stops[i]);
         }
 
-        // We need to consider at least one station
-        if (!gotStations < 2) {
-            for (let stopIndex in stops) {
-                if (this.isStation(stops[stopIndex].stopName)) {
-                    gotStations++;
-                    stopsToConsider.push(stops[stopIndex]);
+        // We need to get two stations - northbound and southbound / eastbound and westbound
+        // TODO: How to deal with bloor-yonge or other interchange stations?
+        let gotStations = 0;
 
-                    if (gotStations >= 2) {
-                        break;
-                    }
+
+        for (let stopIndex in stops) {
+            if (this.isStation(stops[stopIndex].stopName)) {
+                gotStations++;
+                stopsToConsider.push(stops[stopIndex]);
+
+                if (gotStations >= 2) {
+                    break;
                 }
             }
         }
+
 
         // Always put stations on top
         stopsToConsider.sort(elem => this.isStation(elem.stopName) ? -1 : 0)
@@ -151,7 +156,7 @@ const TransitHelper = {
         let promises = [];
         for (let idx in stopsToConsider) {
             let stopToConsider = stopsToConsider[idx];
-            promises.push(this.getPredictionsForStopByStopId(stopToConsider.stopId, this.isStation(stopToConsider.stopName)));
+            promises.push(this.getPredictionsForStop(stopToConsider, this.isStation(stopToConsider.stopName)));
         }
 
         let promiseResults = await Promise.all(promises);
