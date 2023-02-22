@@ -108,7 +108,7 @@ const TransitHelper = {
     },
 
     isStation(stopName) {
-        return stopName.endsWith('Station') && stopName.indexOf(' at ') === -1 && stopName.indexOf(' - ') === -1;
+        return stopName.endsWith('Platform') && stopName.indexOf('Station') !== -1 && stopName.indexOf(' at ') === -1;
     },
 
     async getPredictionsForTopNStops(coords, n) {
@@ -116,25 +116,30 @@ const TransitHelper = {
 
         let stops = await this.getNearestStops(coords);
 
-        let gotStation = false;
+        // We need to get two stations - northbound and southbound / eastbound and westbound
+        // TODO: How to deal with bloor-yonge or other interchange stations?
+        let gotStations = 0;
         let stopsToConsider = [];
         for (let i = 0; i < n; i++) {
             if (stops.length < i)
                 break;
 
             if (this.isStation(stops[i].stopName)) {
-                gotStation = true;
+                gotStations++;
             }
             stopsToConsider.push(stops[i]);
         }
 
         // We need to consider at least one station
-        if (!gotStation) {
+        if (!gotStations < 2) {
             for (let stopIndex in stops) {
                 if (this.isStation(stops[stopIndex].stopName)) {
-                    gotStation = true;
+                    gotStations++;
                     stopsToConsider.push(stops[stopIndex]);
-                    break;
+
+                    if (gotStations >= 2) {
+                        break;
+                    }
                 }
             }
         }
@@ -294,10 +299,6 @@ const TransitHelper = {
 
         let consolidatedOutput = {"NorthboundEastbound": [], "SouthboundWestbound": [], "Unknown": []};
 
-        let repeatedStationOnBothSides = false;
-        let repeatingStationOnBothSides = false;
-        let lastStationSide = "";
-
         for (let stopIdx in output) {
             let stop = output[stopIdx];
 
@@ -308,11 +309,6 @@ const TransitHelper = {
                     (route.directionName === "Northbound" || route.directionName === "Eastbound") ? "NorthboundEastbound"
                         : (route.directionName === "Southbound" || route.directionName === "Westbound") ? "SouthboundWestbound"
                             : "Unknown";
-
-                if (repeatingStationOnBothSides) {
-                    consolidatedDirectionName = lastStationSide === "NorthboundEastbound" ? "SouthboundWestbound" : "NorthboundEastbound";
-                    repeatedStationOnBothSides = true;
-                }
 
                 let directionOutput = consolidatedOutput[consolidatedDirectionName];
                 let existingIndex = directionOutput.findIndex(stop => stop.stopName === stopName);
@@ -328,17 +324,6 @@ const TransitHelper = {
                     // First we sort by A, B, C then we sort by numbers
                     consolidatedOutput[consolidatedDirectionName][existingIndex].routes.sort((a, b) => a.routeNo.localeCompare(b.routeNo));
                     consolidatedOutput[consolidatedDirectionName][existingIndex].routes.sort((a, b) => parseInt(a.routeNo) - parseInt(b.routeNo));
-                }
-
-                // Special case for stations
-                if (this.isStation(stopName)) {
-                    if (repeatingStationOnBothSides === false) {
-                        routeIdx--;
-                        lastStationSide = consolidatedDirectionName;
-                        repeatingStationOnBothSides = true;
-                    }
-                } else {
-                    repeatingStationOnBothSides = false;
                 }
             }
         }
