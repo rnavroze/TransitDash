@@ -9,17 +9,24 @@ import {ElMessage} from 'element-plus';
 const state = reactive({
     isLoading: true,
     isRefreshing: false,
+    locationEnabled: true,
+    searchedLocation: null,
+    selectedLocation: null,
+    stopList: [],
     geolocationDenied: false,
     nextUpdate: 30,
     netrains: [],
     swtrains: []
 });
 
+let stopData;
+
 let getData = async () => {
-    let data = await TransitHelper.getData();
+    let data = await TransitHelper.getData(stopData, state.locationEnabled, state.selectedLocation);
 
     if (data[0] === "success") {
         state.isLoading = false;
+
         state.netrains = data[1]['NorthboundEastbound'];
         state.swtrains = data[1]['SouthboundWestbound'];
     } else {
@@ -41,6 +48,8 @@ let reload = () => {
 }
 
 onMounted(async () => {
+    stopData = await TransitHelper.getStopData();
+    state.stopList = await TransitHelper.getStops(stopData);
     await getData();
     setTimeout(updateTick, 1000);
 });
@@ -56,22 +65,38 @@ let updateTick = async () => {
     setTimeout(updateTick, 1000);
 }
 
+let handleLocationChange = (value) => {
+    state.selectedLocation = value;
+    state.isLoading = true;
+    getData();
+}
+
+let handleGeolocationChange = (value) => {
+    state.isLoading = true;
+    getData();
+}
+
 </script>
 
 <style scoped lang="scss">
-//@use "element-plus/theme-chalk/src/common/var" as *;
-//
-//.header {
-//  .el-col {
-//    div {
-//      background-color: $color-info;
-//      color: $color-black;
-//    margin: 16px;
-//    }
-//  }
-//}
-//
+.title {
+  font-size: calc(var(--el-font-size-large) * 2);
+  margin-bottom: 16px;
+}
 
+.search {
+  margin-bottom: 8px;
+
+  .location_switch {
+    padding: 8px 0;
+  }
+
+  ̥
+  .location_box, :deep(.el-select-v2) {
+    width: 100%;
+  }
+
+}
 
 .el-row {
   padding-bottom: 4px;
@@ -79,6 +104,10 @@ let updateTick = async () => {
 
 .el-main {
   padding: 0;
+}
+
+.el-container {
+  padding: 0 4px;
 }
 
 .el-col {
@@ -185,9 +214,33 @@ let updateTick = async () => {
 </style>
 
 <template>
-    <!--    <pre>{{ state.rawText }}</pre>-->
     <el-container>
         <el-main>
+            <el-row>
+                <el-col :span="24" class="title">
+                    <img src="android-chrome-192x192.png" height="32"
+                         style="position: relative; left: 4̥px; top: 2px; margin-right: 16px;"/>TransitDash
+                </el-col>
+            </el-row>
+            <el-row>
+                <el-col :span="24" class="search">
+                    <div class="location_switch">
+                        <el-switch v-model="state.locationEnabled"
+                                   @change="handleGeolocationChange"
+                                   active-text="Automatically Detect Location"/>
+                    </div>
+                    <div class="location_box" v-if="!state.locationEnabled">
+                        <el-select-v2
+                                @change="handleLocationChange"
+                                v-model="state.searchedLocation"
+                                placeholder="Search for a stop or station"
+                                :options="state.stopList"
+                                filterable
+                                clearable/>
+                    </div>
+                </el-col>
+
+            </el-row>
             <el-row class="header">
                 <el-col :span="12">
                     <el-card>
@@ -203,7 +256,7 @@ let updateTick = async () => {
                 </el-col>
             </el-row>
             <el-row v-if="state.isLoading">
-                <el-col :span="24" style="text-align: center" v-if="!state.geolocationDenied">
+                <el-col :span="24" style="text-align: center" v-if="!state.geolocationDenied || !state.locationEnabled">
                     <el-icon class="is-loading">
                         <Loading/>
                     </el-icon>
@@ -212,7 +265,7 @@ let updateTick = async () => {
                     <el-result
                             icon="error"
                             title="Location Denied"
-                            sub-title="Please allow this app to access your location"
+                            sub-title="Please disable 'Automatically Detect Location' above or allow this app to access your location"
                     >
                         <template #extra>
                             <el-button type="primary" @click="reload">Reload</el-button>

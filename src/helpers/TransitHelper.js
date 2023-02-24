@@ -11,19 +11,36 @@ const SUBWAY_LINES = [
     {lineNo: 2, lineName: 'Bloor-Danforth', directionNE: "East", directionSW: "West"},
     {lineNo: 3, lineName: 'Scarborough', directionNE: "East", directionSW: "West"},
     {lineNo: 4, lineName: 'Sheppard', directionNE: "East", directionSW: "West"},
-]
+];
+
+const INTERCHANGE_STATIONS = [
+    'Bloor', 'Yonge', 'St. George', 'Spadina', 'Kennedy', 'Sheppard-Yonge'
+];
 
 const TransitHelper = {
+    stopData: [],
+
     async getStopData() {
         // TODO: Error handling
-        return await CsvHelper.fetch({
+        this.stopData = await CsvHelper.fetch({
                 url: 'data/stops.txt'
             }
         );
+        return this.stopData;
     },
 
-    async getNearestStops(coords) {
-        let stops = await this.getStopData();
+    async getStops(stopData) {
+        let stopCodeIndex = stopData.fields.findIndex(field => field === "stop_code");
+        let stopNameIndex = stopData.fields.findIndex(field => field === "stop_name");
+
+        return stopData.records.map(val => ({
+            value: val[stopCodeIndex],
+            label: val[stopNameIndex]
+        }));
+    },
+
+    async getNearestStops(coords, stopData) {
+        let stops = stopData === undefined ? await this.getStopData() : stops;
 
         let stopIdIndex = stops.fields.findIndex(field => field === "stop_id");
         let stopCodeIndex = stops.fields.findIndex(field => field === "stop_code");
@@ -133,16 +150,23 @@ const TransitHelper = {
         }
 
         // We need to get two stations - northbound and southbound / eastbound and westbound
-        // TODO: How to deal with bloor-yonge or other interchange stations?
+        let stationLimit = 2;
         let gotStations = 0;
 
 
         for (let stopIndex in stops) {
             if (this.isStation(stops[stopIndex].stopName)) {
+
+                // Bit of a hacky solution: increase the station count to 4 if we detect an interchange station
+                // Right now, no station in Toronto has more than 2 lines, so this gets the job done
+                if (INTERCHANGE_STATIONS.some(v => stops[stopIndex].stopName.includes(v))) {
+                    stationLimit = 4;
+                }
+
                 gotStations++;
                 stopsToConsider.push(stops[stopIndex]);
 
-                if (gotStations >= 2) {
+                if (gotStations >= stationLimit) {
                     break;
                 }
             }
@@ -173,7 +197,29 @@ const TransitHelper = {
         return stopsToReturn;
     },
 
-    async consolidateData(coords) {
+    async consolidateData(input) {
+        let coords = {lat: null, lon: null};
+
+        if (input.lat && input.lon) {
+            coords.lat = input.lat;
+            coords.lon = input.lon;
+        } else {
+            if (input.stopCode === undefined || input.stopCode === null) {
+                return [];
+            }
+
+            let stopCodeIndex = this.stopData.fields.findIndex(field => field === "stop_code");
+            let stopLatIndex = this.stopData.fields.findIndex(field => field === "stop_lat");
+            let stopLonIndex = this.stopData.fields.findIndex(field => field === "stop_lon");
+
+            let stopForCoords = this.stopData.records.find(stop => stop[stopCodeIndex] === input.stopCode);
+            coords.lat = stopForCoords[stopLatIndex];
+            coords.lon = stopForCoords[stopLonIndex];
+        } /*else {
+            console.error('Invalid input to consolidateData', input);
+            throw new Error('Invalid coordinates/stop');
+        }*/
+
         let stops = await this.getPredictionsForTopNStops(coords, FETCH_N_STOPS);
 
         let output = [];
@@ -341,12 +387,19 @@ const TransitHelper = {
     // Queen and Bay: {lat: 43.651838, lon: -79.381618}
     // (function c2a(lat, lon) { return {lat, lon} })(43.638015, -79.537103)
     //getPredictionsForTopNStops({lat: 43.707321, lon: -79.395445}, 6).then(str => console.log(str));
-    async getData() {
+    async getData(stopData, locationEnabled, selectedLocation) {
+//        console.log('stopData', stopData, 'locationEnabled', locationEnabled, 'selectedLocation', selectedLocation);
+        this.stopData = stopData;
         try {
-            let pos = await GeolocationHelper.getCurrentPosition();
-            let data = await this.consolidateData({lat: pos.coords.latitude, lon: pos.coords.longitude});
+            let data;
 
-            console.log('data', data);
+            if (locationEnabled) {
+                let pos = await GeolocationHelper.getCurrentPosition();
+                data = await this.consolidateData({lat: pos.coords.latitude, lon: pos.coords.longitude});
+            } else {
+                data = await this.consolidateData({stopCode: selectedLocation});
+            }
+
             return ['success', data];
         } catch (err) {
             console.error('error', err);
