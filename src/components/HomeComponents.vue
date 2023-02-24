@@ -239,7 +239,7 @@ let updateTick = async () => {
                                     </div>
                                 </template>
                                 <div class="primary_prediction">
-                                    <template v-if="route.predictionMinutes.length > 0">
+                                    <template v-if="!isNaN(route.firstPrediction)">
                                         {{ route.firstPrediction }} min
                                     </template>
                                     <template v-else>
